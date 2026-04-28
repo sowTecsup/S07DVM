@@ -1,7 +1,10 @@
-using Unity.Cinemachine;
-using UnityEngine;
-using UnityEngine.InputSystem;
 using Sirenix.OdinInspector;
+using System;
+using Unity.Cinemachine;
+using Unity.VisualScripting;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.InputSystem;
 
 public class ThirdPersonController : MonoBehaviour
 {
@@ -14,7 +17,7 @@ public class ThirdPersonController : MonoBehaviour
     [FoldoutGroup("References")]
     public CinemachineCamera characterAimCamera;
     [FoldoutGroup("References")]
-  //  public Animator animator;
+    public LineRenderer RayPrefab;
 
 
     [FoldoutGroup("Controller")]
@@ -54,13 +57,33 @@ public class ThirdPersonController : MonoBehaviour
 
     public bool aimMode = false;
 
+    [FoldoutGroup("Attack")]
+    public Transform WeaponShootAnchor;
+    [FoldoutGroup("Attack")]
+    public Vector2 MouseMovement;
+    [FoldoutGroup("Attack")]
+    [SerializeField] private float sensitivity = 2f;
+    [SerializeField] private float yaw;
+    [SerializeField] private float pitch;
+
+
     Vector3 normalDebug;
     Vector3 impactPoint;
     Vector3 crossResult;
 
+
+    public UnityEvent OnSpawn;
+    public UnityEvent OnAttackEvent;
+    public UnityEvent OnDead;
+    public UnityEvent OnHit;
+    public UnityEvent OnUpgrade;
+
     private void Awake()
     {
-        inputs = new();
+       
+
+
+         inputs = new();
         controller = GetComponent<CharacterController>();
 
         Cursor.visible = false;
@@ -89,10 +112,22 @@ public class ThirdPersonController : MonoBehaviour
             characterCamera.Priority = 10;
             characterAimCamera.Priority = 0;
             aimMode = false;
-        };
 
+
+            Vector3 cameraForwardDir = characterCamera.transform.forward;
+            cameraForwardDir.y = 0;
+            cameraForwardDir.Normalize();
+            Quaternion targetQuaternion = Quaternion.LookRotation(cameraForwardDir);
+            transform.rotation = targetQuaternion;
+        };
+        inputs.Player.Attack.performed += OnAttack;
+        inputs.Player.Look.performed += ctx => MouseMovement = ctx.ReadValue<Vector2>();
+        inputs.Player.Look.canceled += ctx => MouseMovement = Vector2.zero;
         // inputs.Player.Sprint.performed += OnDash;
     }
+
+ 
+
     void Start()
     {
 
@@ -103,20 +138,22 @@ public class ThirdPersonController : MonoBehaviour
         OnMove();
         //OnSimpleMove();
     }
-
+    #region Movement
     public void OnMove()
     {
 
 
-        Vector3 cameraForwardDir = characterCamera.transform.forward;
-        cameraForwardDir.y = 0;
-        cameraForwardDir.Normalize();
+        Vector3 cameraForwardDir = Vector3.zero;
 
 
         if(!aimMode)
         {
             if (moveInput != Vector2.zero)
             {
+                cameraForwardDir = characterCamera.transform.forward;
+                cameraForwardDir.y = 0;
+                cameraForwardDir.Normalize();
+
                 Quaternion targetQuaternion = Quaternion.LookRotation(cameraForwardDir);
                 //transform.rotation = targetQuaternion;
                 transform.rotation = Quaternion.Slerp(
@@ -126,19 +163,39 @@ public class ThirdPersonController : MonoBehaviour
 
 
             }
+
+
+            Vector3 angles = transform.rotation.eulerAngles;
+            yaw = angles.y;
+            pitch = angles.x;
+
+            if (pitch > 180f)
+                pitch -= 360f;
         }
         else
         {
+
+            cameraForwardDir = characterAimCamera.transform.forward;
+            cameraForwardDir.y = 0;
+            cameraForwardDir.Normalize();
+
+            yaw += MouseMovement.x * sensitivity;
+            pitch -= MouseMovement.y * sensitivity;
+            pitch = Mathf.Clamp(pitch, -60f, 60f);
+            Quaternion targetRotation = Quaternion.Euler(pitch, yaw, 0f);
+            /*
+            Vector3 Target = characterAimCamera.transform.forward + (Vector3)MouseMovement;
+
 
             Vector3 cameraForwardAimDir = characterCamera.transform.forward;
             //cameraForwardAimDir.y = 0;
             cameraForwardAimDir.Normalize();
 
-            Quaternion targetQuaternion = Quaternion.LookRotation(cameraForwardAimDir);
+            Quaternion targetQuaternion = Quaternion.LookRotation(cameraForwardAimDir);*/
 
             transform.rotation = Quaternion.Slerp(
                 transform.rotation,
-                targetQuaternion,
+                targetRotation,
                 rotationSpeed * Time.deltaTime);
         }
        
@@ -193,7 +250,7 @@ public class ThirdPersonController : MonoBehaviour
         if (!controller.isGrounded) return;
 
        // animator.SetTrigger("Jump");
-        source.GenerateImpulse();
+      
         verticalVelocity = jumpForce;
     }
     public void OnSimpleMove()
@@ -258,10 +315,34 @@ public class ThirdPersonController : MonoBehaviour
             }
         }
     }
+    #endregion
+    private void OnAttack(InputAction.CallbackContext context)
+    {
+        OnAttackEvent?.Invoke();
+        source.GenerateImpulse();
+        Debug.Log("Attack");
+        Physics.Raycast(WeaponShootAnchor.position,characterAimCamera.transform.forward,out RaycastHit hit,100);
+
+        if(hit.collider != null)
+        {
+            //  Physics.Raycast(transform.position, transform.right, out RaycastHit hitRight, rayLenght);
+            LineRenderer ray = Instantiate(RayPrefab, transform.position, Quaternion.identity);
+            ray.gameObject.transform.position = WeaponShootAnchor.position;
+
+            ray.positionCount = 2;
+            ray.SetPosition(0, WeaponShootAnchor.position);
+            ray.SetPosition(1, hit.point);
+
+
+            
+         
+        }
+    }
     public float GetSpeed()
     {
         return Mathf.Abs(controller.velocity.magnitude);
     }
+ 
     private void OnDrawGizmos()
     {
         Gizmos.color = Color.purple;
