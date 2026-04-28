@@ -12,6 +12,8 @@ public class ThirdPersonController : MonoBehaviour
     [FoldoutGroup("References")]
     public CinemachineCamera characterCamera;
     [FoldoutGroup("References")]
+    public CinemachineCamera characterAimCamera;
+    [FoldoutGroup("References")]
   //  public Animator animator;
 
 
@@ -50,6 +52,8 @@ public class ThirdPersonController : MonoBehaviour
     [FoldoutGroup("WallRun")]
     public bool enableWallRun;
 
+    public bool aimMode = false;
+
     Vector3 normalDebug;
     Vector3 impactPoint;
     Vector3 crossResult;
@@ -61,6 +65,9 @@ public class ThirdPersonController : MonoBehaviour
 
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
+
+        characterCamera.Priority = 10;
+        characterAimCamera.Priority = 0;
     }
     private void OnEnable()
     {
@@ -71,8 +78,20 @@ public class ThirdPersonController : MonoBehaviour
 
 
         inputs.Player.Jump.performed += OnJump;
+        inputs.Player.Aim.started += ctx =>
+            {
+                characterCamera.Priority = 0;
+                characterAimCamera.Priority = 10;
+                aimMode = true;
+            };
+        inputs.Player.Aim.canceled += ctx =>
+        {
+            characterCamera.Priority = 10;
+            characterAimCamera.Priority = 0;
+            aimMode = false;
+        };
 
-       // inputs.Player.Sprint.performed += OnDash;
+        // inputs.Player.Sprint.performed += OnDash;
     }
     void Start()
     {
@@ -87,22 +106,42 @@ public class ThirdPersonController : MonoBehaviour
 
     public void OnMove()
     {
+
+
         Vector3 cameraForwardDir = characterCamera.transform.forward;
         cameraForwardDir.y = 0;
         cameraForwardDir.Normalize();
 
 
-        if(moveInput != Vector2.zero)
+        if(!aimMode)
         {
-            Quaternion targetQuaternion = Quaternion.LookRotation(cameraForwardDir);
-            //transform.rotation = targetQuaternion;
+            if (moveInput != Vector2.zero)
+            {
+                Quaternion targetQuaternion = Quaternion.LookRotation(cameraForwardDir);
+                //transform.rotation = targetQuaternion;
+                transform.rotation = Quaternion.Slerp(
+                    transform.rotation,
+                    targetQuaternion,
+                    rotationSpeed * Time.deltaTime);
+
+
+            }
+        }
+        else
+        {
+
+            Vector3 cameraForwardAimDir = characterCamera.transform.forward;
+            //cameraForwardAimDir.y = 0;
+            cameraForwardAimDir.Normalize();
+
+            Quaternion targetQuaternion = Quaternion.LookRotation(cameraForwardAimDir);
+
             transform.rotation = Quaternion.Slerp(
                 transform.rotation,
                 targetQuaternion,
                 rotationSpeed * Time.deltaTime);
-
-
         }
+       
         //>?
         Vector3 moveDir;
         if (!enableWallRun)
